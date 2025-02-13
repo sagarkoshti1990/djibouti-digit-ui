@@ -17,7 +17,6 @@ import React, {
   useEffect,
   useState,
   useMemo,
-  useCallback,
   useRef
 } from "react";
 // import { render } from "react-dom";
@@ -56,7 +55,7 @@ const tableHeader = [
 const ScrutinyDetails = ({ onSelect, userType, formData, config }) => {
   const { t } = useTranslation();
   // const history = useHistory();
-  const [subOccupancy, setsubOccupancy] = useState([]);
+  // const [subOccupancy, setsubOccupancy] = useState([]);
   const [subOccupancyObject, setsubOccupancyObject] = useState(formData?.subOccupancy || formData?.landInfo?.unit || {});
   // const [subOccupancyOption, setsubOccupancyOption] = useState([]);
   // const [floorData, setfloorData] = useState([]);
@@ -72,7 +71,7 @@ const ScrutinyDetails = ({ onSelect, userType, formData, config }) => {
   // });
   const [data,setData] = useState({});
   const [numberFoFloor, setNumberFoFloor] = useState(0);
-  const blocks = [{number:1}]
+  const blocks = useMemo(() => [{ number: 1 }], []);
   const activeCell = useRef(null);
   const [tempValue, setTempValue] = useState("");
 
@@ -82,20 +81,24 @@ const ScrutinyDetails = ({ onSelect, userType, formData, config }) => {
       floors.push({
         Floor: t(`BPA_FLOOR_NAME_${ob}`),
         Level: ob,
-        Occupancy: t(`${ob.occupancies?.[0]?.type || "NA"}`),
-        BuildupArea: ob.occupancies?.[0]?.builtUpArea || 0,
-        FloorArea: ob.occupancies?.[0]?.floorArea || 0,
-        CarpetArea: ob.occupancies?.[0]?.CarpetArea || 0,
+        Occupancy: t(`${ob.occupancies?.[0]?.type || "Residential"}`),
+        BuildupArea: ob.occupancies?.[0]?.builtUpArea || 7.4005,
+        FloorArea: ob.occupancies?.[0]?.floorArea || 6.435,
+        CarpetArea: ob.occupancies?.[0]?.CarpetArea || 4.56,
         key: t(`BPA_FLOOR_NAME_${ob}`),
       });
     });
     
-    blocks.map((ob) => {
-      subOccupancyObject[`Block_Floor_${ob.number}`] = floors;
+    setsubOccupancyObject((prevSubOccupancyObject) => {
+      const updatedSubOccupancyObject = { ...prevSubOccupancyObject };
+      blocks.forEach((ob) => {
+        updatedSubOccupancyObject[`Block_Floor_${ob.number}`] = floors;
+      });
+      return updatedSubOccupancyObject;
     });
-    setsubOccupancyObject(subOccupancyObject);
-  },[numberFoFloor,t])
-console.log(subOccupancyObject);
+  },[numberFoFloor,blocks,t])
+
+  
   function getsuboptions() {
     let suboccoption = [];
     // data &&
@@ -123,7 +126,7 @@ console.log(subOccupancyObject);
         newSubOccupancy.push(ob?.[1]);
       });
     blocks[`Block_${num}`] = newSubOccupancy;
-    setsubOccupancy(newSubOccupancy);
+    // setsubOccupancy(newSubOccupancy);
     setsubOccupancyObject(blocks);
   };
 
@@ -131,65 +134,79 @@ console.log(subOccupancyObject);
     let afterRemove = subOccupancyObject[`Block_${num}`].filter((value, i) => {
       return i !== index;
     });
-    setsubOccupancy(afterRemove);
+    // setsubOccupancy(afterRemove);
     let temp = subOccupancyObject;
     temp[`Block_${num}`] = afterRemove;
     setsubOccupancyObject(temp);
   };
 
-  const accessData = (plot) => {
+  const accessData = React.useCallback((plot) => {
     const name = plot;
     return (originalRow, rowIndex, columns) => {
       return originalRow[name];
     };
-  };
+  },[]);
 
   const closeToast = () => {
     setShowToast(null);
   };
   
-  const updateData = (rowIndex, columnId, value) => {
-    // setfloorData((prevData) =>
-    //   prevData.map((row, idx) => (idx === rowIndex ? { ...row, [columnId]: value } : row))
-    // );
-  };
-  const renderEditableCell = (rowIndex, columnId) => {
-    const isActive = activeCell.current?.rowIndex === rowIndex && activeCell.current?.columnId === columnId;
-    
-    return isActive ? (
-      <input
-        type="text"
-        value={tempValue}
-        autoFocus
-        onChange={(e) => setTempValue(e.target.value)}
-        onBlur={() => {
-          updateData(rowIndex, columnId, tempValue);
-          activeCell.current = null;
-        }}
-      />
-    ) : (
-      <span
-        onClick={() => {
-          activeCell.current = { rowIndex, columnId };
-          setTempValue(data[rowIndex][columnId]);
-        }}
-      >
-        {data[rowIndex][columnId]}
-      </span>
-    );
-  };
+  const updateData = React.useCallback(
+    (rowIndex, columnId, value) => {
+      const dataNew = {
+        ...subOccupancyObject,
+        [`Block_Floor_1`]: subOccupancyObject[`Block_Floor_1`]?.map((row, idx) => (idx === rowIndex ? { ...row, [columnId]: value } : row)),
+      };
+      setsubOccupancyObject(dataNew);
+    },
+    [subOccupancyObject]
+  );
+  
+  const renderEditableCell = React.useCallback(
+    (rowIndex, columnId, block) => {
+      const isActive = activeCell.current?.rowIndex === rowIndex && activeCell.current?.columnId === columnId;
+      if (isActive && !["Floor", "Level"].includes(columnId)) {
+        return (
+          <TextInput
+            type="text"
+            value={tempValue}
+            autoFocus
+            onChange={(e) => setTempValue(e.target.value)}
+            onBlur={() => {
+              updateData(rowIndex, columnId, tempValue);
+              activeCell.current = null;
+            }}
+          />
+        );
+      } else {
+        return (
+          <span
+            onClick={() => {
+              activeCell.current = { rowIndex, columnId };
+              setTempValue(subOccupancyObject[`Block_Floor_${block.number}`][rowIndex][columnId]);
+            }}
+          >
+            {subOccupancyObject[`Block_Floor_${block.number}`]?.[rowIndex]?.[columnId]}
+          </span>
+        );
+      }
+    },
+    [activeCell, subOccupancyObject, tempValue, updateData]
+  );
 
-  const tableColumns = useMemo(() => {
+  const getTableColumnsMemoized = React.useCallback((block) => {
     return tableHeader?.map((ob) => ({
       Header: t(`${ob.name}`),
       accessor: accessData(ob.id),
       id: ob.id,
-      Cell: ({ row, column }) => renderEditableCell(row.index, column.id),
+      Cell: ({ row }) => {
+        return renderEditableCell(row.index, ob.id, block);
+      },
       //symbol: plot?.symbol,
       //sortType: sortRows,
     }));
-  });
-
+  }, [renderEditableCell, accessData, t]);
+  
   const onSkip = () => onSelect();
 
   const goNext = () => {
@@ -245,7 +262,7 @@ console.log(subOccupancyObject);
     let res = [];
     let temp = subOccupancyObject;
     temp[`Block_${num}`] = res;
-    setsubOccupancy(res);
+    // setsubOccupancy(res);
     setsubOccupancyObject(temp);
   };
 
@@ -265,7 +282,7 @@ console.log(subOccupancyObject);
   }
 
   if (isMdmsLoading) return <Loader /> 
-console.log(blocks,"config");
+  
   return (
     <React.Fragment>
       <Timeline currentStep={checkingFlow === "OCBPA" ? 2 : 1} flow={checkingFlow === "OCBPA" ? "OCBPA" : ""} />
@@ -275,7 +292,6 @@ console.log(blocks,"config");
         onSelect={goNext}
         onSkip={onSkip} /* isDisabled={Object.keys(subOccupancyObject).length === 0} */
         onChange={(e) => {
-          console.log(e?.target?.name)
           setNumberFoFloor((pre) => (e?.target?.name === "numberOfFloors" && !isNaN(parseInt(e?.target?.value)) ? parseInt(e?.target?.value) : pre));
         }}
       >
@@ -332,11 +348,12 @@ console.log(blocks,"config");
         <hr style={{ color: "#cccccc", backgroundColor: "#cccccc", height: "2px", marginTop: "20px", marginBottom: "20px" }} /> */}
         <CardSubHeader style={{ fontSize: "20px" }}>{t("BPA_OCC_SUBOCC_HEADER")}</CardSubHeader>
         {blocks?.map((block, index) => 
-          {console.log(subOccupancyObject[`Block_Floor_${block.number}`])
+          {
+            const newTableColumns = getTableColumnsMemoized(block);
             return <div key={index} style={{ marginTop: "20px" }}>
-            <CardSubHeader style={{ fontSize: "18px" }}>
+            {/* <CardSubHeader style={{ fontSize: "18px" }}>
               {t("BPA_BLOCK_SUBHEADER")} {index + 1}
-            </CardSubHeader>
+            </CardSubHeader> */}
             {!(checkingFlow === "OCBPA") ? (
               <CardSectionHeader style={{ fontWeight: "normal" }} className="card-label-smaller">
                 {t("BPA_SUB_OCCUPANCY_LABEL")}
@@ -381,6 +398,7 @@ console.log(blocks,"config");
               ) : null}
               <div style={{ overflowX: "scroll" }}>
                 <Table
+                  name={`block-${block.number}`}
                   className="customTable table-fixed-first-column table-border-style"
                   t={t}
                   disableSort={false}
@@ -390,9 +408,9 @@ console.log(blocks,"config");
                   //globalSearch={filterValue}
                   initSortId="S N "
                   //onSearch={onSearch}
-                  //data={[{Floor:"ground floor",Level:1,Occupancy:"self",BuildupArea:440,FloorArea:400,CarpetArea:380,key:"ground floor"},{Floor:"first floor",Level:1,Occupancy:"self",BuildupArea:450,FloorArea:410,CarpetArea:390,key:"first floor"},{Floor:"second floor",Level:1,Occupancy:"self",BuildupArea:400,FloorArea:350,CarpetArea:300,key:"second floor"}]}
-                  data={subOccupancyObject[`Block_Floor_${block.number}`] || []}
-                  columns={tableColumns}
+                  // data={[{Floor:"ground floor",Level:1,Occupancy:"self",BuildupArea:440,FloorArea:400,CarpetArea:380,key:"ground floor"},{Floor:"first floor",Level:1,Occupancy:"self",BuildupArea:450,FloorArea:410,CarpetArea:390,key:"first floor"},{Floor:"second floor",Level:1,Occupancy:"self",BuildupArea:400,FloorArea:350,CarpetArea:300,key:"second floor"}]}
+                  data={subOccupancyObject[`Block_Floor_${block.number}`]||[]}
+                  columns={newTableColumns}
                   getCellProps={(cellInfo) => {
                     return {
                       style: {},
@@ -426,3 +444,4 @@ console.log(blocks,"config");
 };
 
 export default ScrutinyDetails;
+
